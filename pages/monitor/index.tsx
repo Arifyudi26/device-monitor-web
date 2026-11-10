@@ -73,13 +73,6 @@ function timeAgo(date: string) {
   return `${Math.floor(hrs / 24)}d ago`;
 }
 
-function batteryIcon(level: number | null) {
-  if (level === null) return "🔋";
-  if (level < 0.2) return "🪫";
-  if (level < 0.5) return "🔋";
-  return "🔋";
-}
-
 function batteryColor(level: number | null) {
   if (level === null) return "text-gray-400";
   if (level < 0.2) return "text-red-500";
