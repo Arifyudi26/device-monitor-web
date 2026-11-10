@@ -32,7 +32,19 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   const code = generateOtp();
   const expiresAt = new Date(Date.now() + 5 * 60 * 1000); // 5 menit
 
-  await db.otpCode.create({ data: { email, code, purpose, expiresAt } });
+  // Untuk register, user belum ada — skip relasi FK agar tidak crash
+  // Untuk purpose lain, user sudah pasti ada (dicek di atas)
+  await db.otpCode.create({
+    data: {
+      email,
+      code,
+      purpose,
+      expiresAt,
+      ...(purpose !== "register" && {
+        user: { connect: { email } },
+      }),
+    },
+  });
 
   try {
     await sendOtpEmail(email, code, purpose);
