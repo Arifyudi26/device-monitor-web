@@ -57,6 +57,7 @@ model Device {
   user         User?           @relation(fields: [userId], references: [id])
   events       DeviceEvent[]
   commands     DeviceCommand[]
+  contacts     Contact[]
 
   @@index([pairingCode])
   @@index([userId])
@@ -80,9 +81,9 @@ model DeviceEvent {
 model DeviceCommand {
   id         String    @id @default(cuid())
   deviceId   String
-  command    String    // fetch_contacts, fetch_sms, fetch_calls, take_photo, take_video
+  command    String
   payload    Json?
-  status     String    @default("pending") // pending, delivered, executed, failed
+  status     String    @default("pending")
   result     Json?
   createdAt  DateTime  @default(now())
   updatedAt  DateTime  @updatedAt
@@ -93,4 +94,21 @@ model DeviceCommand {
   @@index([deviceId])
   @@index([status])
   @@index([createdAt])
+}
+
+model Contact {
+  id          String   @id  // ID kontak dari HP (native contact ID)
+  deviceId    String
+  name        String?
+  phones      String[] // array nomor
+  emails      String[] // array email
+  isNew       Boolean  @default(false) // true kalau baru muncul di sync terakhir
+  firstSeenAt DateTime @default(now())
+  lastSeenAt  DateTime @default(now())
+
+  device      Device   @relation(fields: [deviceId], references: [id])
+
+  @@unique([id, deviceId])
+  @@index([deviceId])
+  @@index([isNew])
 }

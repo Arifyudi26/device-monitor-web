@@ -2,29 +2,31 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/router";
 import AppLayout from "@components/layout/AppLayout";
 import PageMeta from "@components/common/PageMeta";
-import type { ContactItem } from "@/pages/api/contacts";
+
+// ─── Types ────────────────────────────────────────────────────────────────────
+
+interface ContactItem {
+  id: string;
+  deviceId: string;
+  name: string | null;
+  phones: string[];
+  emails: string[];
+  isNew: boolean;
+  firstSeenAt: string;
+  lastSeenAt: string;
+}
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function timeAgo(date: string) {
-  const diff = Date.now() - new Date(date).getTime();
-  const mins = Math.floor(diff / 60000);
-  if (mins < 1) return "barusan";
-  if (mins < 60) return `${mins} menit lalu`;
-  const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return `${hrs} jam lalu`;
-  return new Date(date).toLocaleDateString("id-ID", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
-}
-
 const AVATAR_COLORS = [
-  "bg-blue-500/20 text-blue-400",
-  "bg-purple-500/20 text-purple-400",
-  "bg-pink-500/20 text-pink-400",
-  "bg-amber-500/20 text-amber-400",
-  "bg-emerald-500/20 text-emerald-400",
-  "bg-sky-500/20 text-sky-400",
-  "bg-rose-500/20 text-rose-400",
-  "bg-indigo-500/20 text-indigo-400",
+  "bg-blue-500/20 text-blue-500",
+  "bg-purple-500/20 text-purple-500",
+  "bg-pink-500/20 text-pink-500",
+  "bg-amber-500/20 text-amber-500",
+  "bg-emerald-500/20 text-emerald-500",
+  "bg-sky-500/20 text-sky-500",
+  "bg-rose-500/20 text-rose-500",
+  "bg-indigo-500/20 text-indigo-500",
 ];
 
 function getAvatarColor(name: string): string {
@@ -33,30 +35,24 @@ function getAvatarColor(name: string): string {
   return AVATAR_COLORS[hash];
 }
 
-function getInitial(name: string | null): string {
-  return name?.trim()[0]?.toUpperCase() ?? "?";
-}
-
 // ─── Components ───────────────────────────────────────────────────────────────
 
-function ContactRow({ contact, isNew }: { contact: ContactItem; isNew: boolean }) {
+function ContactRow({ contact }: { contact: ContactItem }) {
   return (
-    <div className={`flex items-center gap-3 px-4 py-3 border-b border-gray-100 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-800/40 transition-colors ${isNew ? "bg-blue-50/50 dark:bg-blue-900/10" : ""}`}>
+    <div className={`flex items-center gap-3 px-4 py-3 border-b border-gray-100 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-800/40 transition-colors last:border-0 ${contact.isNew ? "bg-blue-50/50 dark:bg-blue-900/10" : ""}`}>
       {/* Avatar */}
       <div className={`w-9 h-9 rounded-xl flex items-center justify-center font-bold text-sm flex-shrink-0 ${getAvatarColor(contact.name ?? "?")}`}>
-        {getInitial(contact.name)}
+        {(contact.name?.trim()[0] ?? "?").toUpperCase()}
       </div>
 
       {/* Info */}
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2">
           <span className="text-sm font-medium text-gray-900 dark:text-white truncate">
-            {contact.name || <span className="text-gray-400 italic">Tanpa nama</span>}
+            {contact.name || <span className="text-gray-400 italic text-xs">Tanpa nama</span>}
           </span>
-          {isNew && (
-            <span className="shrink-0 text-[10px] font-bold bg-blue-500 text-white px-1.5 py-0.5 rounded-full">
-              NEW
-            </span>
+          {contact.isNew && (
+            <span className="shrink-0 text-[9px] font-bold bg-blue-500 text-white px-1.5 py-0.5 rounded-full">NEW</span>
           )}
         </div>
         {contact.phones.length > 0 && (
@@ -71,7 +67,6 @@ function ContactRow({ contact, isNew }: { contact: ContactItem; isNew: boolean }
         )}
       </div>
 
-      {/* Phone count badge kalau banyak nomor */}
       {contact.phones.length > 1 && (
         <span className="shrink-0 text-[10px] text-gray-400 bg-gray-100 dark:bg-gray-800 px-2 py-0.5 rounded-full">
           +{contact.phones.length - 1}
@@ -88,9 +83,7 @@ export default function ContactsPage() {
   const deviceId = router.query.deviceId as string | undefined;
 
   const [contacts, setContacts] = useState<ContactItem[]>([]);
-  const [newContactIds, setNewContactIds] = useState<Set<string>>(new Set());
-  const [lastSyncAt, setLastSyncAt] = useState<string | null>(null);
-  const [totalCount, setTotalCount] = useState(0);
+  const [total, setTotal] = useState(0);
   const [newCount, setNewCount] = useState(0);
   const [search, setSearch] = useState("");
   const [tab, setTab] = useState<"all" | "new">("all");
@@ -104,9 +97,7 @@ export default function ContactsPage() {
       const res = await fetch(`/api/contacts?deviceId=${deviceId}`);
       const data = await res.json();
       setContacts(data.contacts ?? []);
-      setNewContactIds(new Set((data.newContacts ?? []).map((c: ContactItem) => c.id)));
-      setLastSyncAt(data.lastSyncAt ?? null);
-      setTotalCount(data.totalCount ?? 0);
+      setTotal(data.total ?? 0);
       setNewCount(data.newCount ?? 0);
     } finally {
       setLoading(false);
@@ -126,7 +117,7 @@ export default function ContactsPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ deviceId, command: "fetch_contacts" }),
       });
-      // Poll sampai command executed (max 30 detik)
+      // Poll sampai ada data baru (max 30 detik)
       let attempts = 0;
       const poll = setInterval(async () => {
         attempts++;
@@ -138,9 +129,8 @@ export default function ContactsPage() {
     }
   };
 
-  // Filter
   const filtered = contacts.filter((c) => {
-    if (tab === "new" && !newContactIds.has(c.id)) return false;
+    if (tab === "new" && !c.isNew) return false;
     if (!search) return true;
     const q = search.toLowerCase();
     return (
@@ -155,44 +145,30 @@ export default function ContactsPage() {
       <PageMeta title="Contacts — Device Monitor" description="Daftar kontak dari perangkat" />
 
       {/* ── Header ────────────────────────────────────────────────────── */}
-      <div className="flex items-center gap-3 mb-6">
-        <button
-          onClick={() => router.back()}
-          className="flex items-center gap-1.5 text-sm text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition-colors"
-        >
-          ← Kembali
-        </button>
-        <span className="text-gray-300 dark:text-gray-700">/</span>
+      <div className="flex items-center justify-between gap-3 mb-6">
         <h1 className="text-xl font-semibold text-gray-800 dark:text-white">📒 Contacts</h1>
         {deviceId && (
-          <span className="text-xs text-gray-400 bg-gray-100 dark:bg-gray-800 px-2.5 py-1 rounded-full">
-            {deviceId.slice(0, 16)}…
+          <span className="text-xs text-gray-400 bg-gray-100 dark:bg-gray-800 px-2.5 py-1 rounded-full font-mono">
+            {deviceId.slice(0, 20)}…
           </span>
         )}
       </div>
 
-      {/* ── Stats row ─────────────────────────────────────────────────── */}
-      <div className="grid grid-cols-3 gap-3 mb-5">
+      {/* ── Stats ─────────────────────────────────────────────────────── */}
+      <div className="grid grid-cols-2 gap-3 mb-5">
         <div className="rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-4">
           <p className="text-xs text-gray-500 mb-1">Total Kontak</p>
-          <p className="text-2xl font-bold text-gray-900 dark:text-white">{totalCount}</p>
+          <p className="text-2xl font-bold text-gray-900 dark:text-white">{total}</p>
         </div>
         <div className="rounded-xl border border-blue-200 dark:border-blue-900/50 bg-blue-50 dark:bg-blue-950/30 p-4">
           <p className="text-xs text-blue-500 mb-1">Kontak Baru</p>
           <p className="text-2xl font-bold text-blue-600 dark:text-blue-400">{newCount}</p>
-          <p className="text-[10px] text-blue-400 mt-0.5">dibanding sync sebelumnya</p>
-        </div>
-        <div className="rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-4">
-          <p className="text-xs text-gray-500 mb-1">Sync Terakhir</p>
-          <p className="text-sm font-semibold text-gray-700 dark:text-gray-300">
-            {lastSyncAt ? timeAgo(lastSyncAt) : "—"}
-          </p>
+          <p className="text-[10px] text-blue-400 mt-0.5">sync terakhir</p>
         </div>
       </div>
 
       {/* ── Toolbar ───────────────────────────────────────────────────── */}
       <div className="flex flex-wrap items-center gap-3 mb-4">
-        {/* Search */}
         <div className="relative flex-1 min-w-[200px] max-w-sm">
           <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">🔍</span>
           <input
@@ -204,7 +180,6 @@ export default function ContactsPage() {
           />
         </div>
 
-        {/* Tabs */}
         <div className="flex gap-1 bg-gray-100 dark:bg-gray-800 p-1 rounded-lg">
           {(["all", "new"] as const).map((t) => (
             <button
@@ -216,21 +191,19 @@ export default function ContactsPage() {
                   : "text-gray-500 dark:text-gray-400"
               }`}
             >
-              {t === "all" ? `Semua (${totalCount})` : `Baru (${newCount})`}
+              {t === "all" ? `Semua (${total})` : `Baru (${newCount})`}
             </button>
           ))}
         </div>
 
-        {/* Showing count */}
         <span className="text-xs text-gray-400">{filtered.length} ditampilkan</span>
 
-        {/* Sync button */}
         <button
           disabled={syncing || !deviceId}
           onClick={handleSync}
           className="ml-auto flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-lg bg-blue-500 hover:bg-blue-600 disabled:opacity-50 text-white transition-colors"
         >
-          <span className={syncing ? "animate-spin" : ""}>⟳</span>
+          <span className={syncing ? "animate-spin inline-block" : ""}>⟳</span>
           {syncing ? "Syncing…" : "Sync Kontak"}
         </button>
       </div>
@@ -247,24 +220,20 @@ export default function ContactsPage() {
           <div className="py-16 text-center">
             <p className="text-3xl mb-3">📭</p>
             <p className="text-sm text-gray-400">
-              {tab === "new" ? "Tidak ada kontak baru sejak sync terakhir" : "Belum ada kontak. Klik Sync Kontak untuk memulai."}
+              {tab === "new"
+                ? "Tidak ada kontak baru sejak sync terakhir"
+                : "Belum ada kontak. Klik Sync Kontak untuk memulai."}
             </p>
           </div>
         ) : (
           <div>
-            {/* Sticky header */}
-            <div className="grid grid-cols-[36px_1fr_1fr_60px] gap-3 px-4 py-2 bg-gray-50 dark:bg-gray-800/50 border-b border-gray-200 dark:border-gray-700">
+            <div className="grid grid-cols-[36px_1fr_1fr] gap-3 px-4 py-2 bg-gray-50 dark:bg-gray-800/50 border-b border-gray-200 dark:border-gray-700">
               <div />
               <p className="text-[11px] font-semibold text-gray-500 uppercase tracking-wide">Nama</p>
               <p className="text-[11px] font-semibold text-gray-500 uppercase tracking-wide">Nomor / Email</p>
-              <div />
             </div>
             {filtered.map((c) => (
-              <ContactRow
-                key={c.id}
-                contact={c}
-                isNew={newContactIds.has(c.id)}
-              />
+              <ContactRow key={`${c.id}-${c.deviceId}`} contact={c} />
             ))}
           </div>
         )}

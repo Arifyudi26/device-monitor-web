@@ -110,6 +110,13 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
 
 // ─── PATCH: HP update status + simpan result ─────────────────────────────────
 
+interface ContactFromDevice {
+  id: string;
+  name: string | null;
+  phones: string[];
+  emails: string[];
+}
+
 async function handlePatch(req: NextApiRequest, res: NextApiResponse) {
   try {
     const { id, status, result } = req.body as {
@@ -130,6 +137,51 @@ async function handlePatch(req: NextApiRequest, res: NextApiResponse) {
         executedAt: new Date(),
       },
     });
+
+    // Kalau fetch_contacts berhasil — simpan ke tabel Contact
+    if (status === "executed" && updated.command === "fetch_contacts" && result?.contacts) {
+      const contacts = result.contacts as ContactFromDevice[];
+      const deviceId = updated.deviceId;
+      const now = new Date();
+
+      // Ambil semua ID kontak yang sudah ada di DB untuk device ini
+      const existing = await db.contact.findMany({
+        where: { deviceId },
+        select: { id: true },
+      });
+      const existingIds = new Set(existing.map((c) => c.id));
+
+      // Reset isNew semua kontak lama
+      await db.contact.updateMany({
+        where: { deviceId, isNew: true },
+        data: { isNew: false },
+      });
+
+      // Upsert semua kontak — tandai isNew kalau belum pernah ada
+      for (const c of contacts) {
+        const isNew = !existingIds.has(c.id);
+        await db.contact.upsert({
+          where: { id_deviceId: { id: c.id, deviceId } },
+          create: {
+            id: c.id,
+            deviceId,
+            name: c.name ?? null,
+            phones: c.phones ?? [],
+            emails: c.emails ?? [],
+            isNew,
+            firstSeenAt: now,
+            lastSeenAt: now,
+          },
+          update: {
+            name: c.name ?? null,
+            phones: c.phones ?? [],
+            emails: c.emails ?? [],
+            isNew,
+            lastSeenAt: now,
+          },
+        });
+      }
+    }
 
     return res.status(200).json({ command: updated });
   } catch (error) {

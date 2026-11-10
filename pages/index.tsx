@@ -243,11 +243,50 @@ function CommandRow({ cmd, deviceId }: { cmd: DeviceCommand; deviceId: string })
 
 // ─── Command Result Renderer ──────────────────────────────────────────────────
 
-interface Contact {
+interface ContactItem {
   id: string;
   name: string | null;
   phones: string[];
   emails: string[];
+  isNew?: boolean;
+}
+
+const AVATAR_COLORS = [
+  "bg-blue-500/20 text-blue-500",
+  "bg-purple-500/20 text-purple-500",
+  "bg-pink-500/20 text-pink-500",
+  "bg-amber-500/20 text-amber-500",
+  "bg-emerald-500/20 text-emerald-500",
+  "bg-sky-500/20 text-sky-500",
+];
+
+function getAvatarColor(name: string): string {
+  let hash = 0;
+  for (const c of name) hash = (hash * 31 + c.charCodeAt(0)) % AVATAR_COLORS.length;
+  return AVATAR_COLORS[hash];
+}
+
+function ContactResultRow({ contact }: { contact: ContactItem }) {
+  return (
+    <div className={`flex items-center gap-3 px-3 py-2.5 border-b border-gray-100 dark:border-gray-800 last:border-0 ${contact.isNew ? "bg-blue-50/60 dark:bg-blue-900/10" : ""}`}>
+      <div className={`w-8 h-8 rounded-lg flex items-center justify-center font-bold text-xs flex-shrink-0 ${getAvatarColor(contact.name ?? "?")}`}>
+        {(contact.name?.trim()[0] ?? "?").toUpperCase()}
+      </div>
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-1.5">
+          <span className="text-sm font-medium text-gray-900 dark:text-white truncate">
+            {contact.name || <span className="text-gray-400 italic text-xs">Tanpa nama</span>}
+          </span>
+          {contact.isNew && (
+            <span className="shrink-0 text-[9px] font-bold bg-blue-500 text-white px-1.5 py-0.5 rounded-full">NEW</span>
+          )}
+        </div>
+        {contact.phones.length > 0 && (
+          <p className="text-xs text-gray-400 truncate">📞 {contact.phones[0]}{contact.phones.length > 1 ? ` +${contact.phones.length - 1}` : ""}</p>
+        )}
+      </div>
+    </div>
+  );
 }
 
 function CommandResult({ command, result, deviceId }: {
@@ -255,29 +294,64 @@ function CommandResult({ command, result, deviceId }: {
   result: Record<string, unknown>;
   deviceId: string;
 }) {
+  const [newContacts, setNewContacts] = useState<ContactItem[]>([]);
+  const [newCount, setNewCount] = useState(0);
+  const [total, setTotal] = useState(0);
+  const [loadingContacts, setLoadingContacts] = useState(false);
+
+  useEffect(() => {
+    if (command !== "fetch_contacts") return;
+    setLoadingContacts(true);
+    fetch(`/api/contacts?deviceId=${deviceId}&onlyNew=true`)
+      .then((r) => r.json())
+      .then((data) => {
+        setNewContacts(data.contacts ?? []);
+        setNewCount(data.newCount ?? 0);
+        setTotal(data.total ?? 0);
+      })
+      .finally(() => setLoadingContacts(false));
+  }, [command, deviceId]);
+
   if (command === "fetch_contacts") {
-    const contacts = (result.contacts as Contact[]) ?? [];
-    const count = result.count as number ?? contacts.length;
+    if (loadingContacts) {
+      return <p className="text-xs text-gray-400 py-2">Memuat data kontak…</p>;
+    }
 
     return (
-      <div className="flex items-center justify-between gap-4 py-1">
-        <div className="flex items-center gap-3">
-          <span className="text-2xl">📒</span>
-          <div>
-            <p className="text-sm font-semibold text-gray-800 dark:text-gray-100">
-              {count} kontak berhasil disync
-            </p>
-            <p className="text-xs text-gray-400 mt-0.5">
-              Lihat halaman Contacts untuk detail lengkap dan perbandingan dengan sync sebelumnya
-            </p>
+      <div>
+        {/* Summary row */}
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center gap-4">
+            <div className="text-center">
+              <p className="text-lg font-bold text-gray-900 dark:text-white">{total}</p>
+              <p className="text-[10px] text-gray-400">Total</p>
+            </div>
+            <div className="text-center">
+              <p className="text-lg font-bold text-blue-500">{newCount}</p>
+              <p className="text-[10px] text-blue-400">Baru</p>
+            </div>
           </div>
+          <a
+            href={`/contacts?deviceId=${deviceId}`}
+            className="text-xs text-blue-500 hover:underline"
+          >
+            Lihat semua →
+          </a>
         </div>
-        <a
-          href={`/contacts?deviceId=${deviceId}`}
-          className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-blue-500 hover:bg-blue-600 text-white transition-colors"
-        >
-          Lihat Contacts →
-        </a>
+
+        {/* Kontak baru */}
+        {newCount === 0 ? (
+          <p className="text-xs text-gray-400 py-2 text-center">Tidak ada kontak baru dibanding sync sebelumnya</p>
+        ) : (
+          <div className="rounded-lg border border-blue-200 dark:border-blue-800 overflow-hidden max-h-64 overflow-y-auto">
+            <div className="px-3 py-1.5 bg-blue-50 dark:bg-blue-900/20 border-b border-blue-200 dark:border-blue-800">
+              <p className="text-[11px] font-semibold text-blue-600 dark:text-blue-400">{newCount} kontak baru</p>
+            </div>
+            {newContacts.map((c) => (
+              <ContactResultRow key={c.id} contact={{ ...c, isNew: true }} />
+            ))}
+          </div>
+        )}
       </div>
     );
   }
