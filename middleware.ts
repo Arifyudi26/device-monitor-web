@@ -24,6 +24,7 @@ const PUBLIC_API_PATHS = [
   "/api/devices",
   "/api/commands",
   "/api/realtime",
+  "/api/contacts",
 ];
 
 export function middleware(req: NextRequest) {
