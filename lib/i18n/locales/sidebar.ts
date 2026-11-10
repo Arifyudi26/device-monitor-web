@@ -1,10 +1,14 @@
 export const sidebar = {
   id: {
-    dashboard: "Dashboard",
+    groupMain: "Menu",
+    groupOthers: "Lainnya",
     monitor: "Device Monitor",
+    contacts: "Contacts",
   },
   en: {
-    dashboard: "Dashboard",
+    groupMain: "Menu",
+    groupOthers: "Others",
     monitor: "Device Monitor",
+    contacts: "Contacts",
   },
 } as const;
