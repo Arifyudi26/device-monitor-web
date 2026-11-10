@@ -6,6 +6,9 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import db from "@/lib/db";
 
+// Event types yang hanya realtime — tidak disimpan ke DB
+const REALTIME_ONLY_TYPES = new Set(["app_background", "app_foreground", "battery_state"]);
+
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method === "POST") {
     return handlePost(req, res);
@@ -20,7 +23,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
 async function handlePost(req: NextApiRequest, res: NextApiResponse) {
   try {
-    const { events } = req.body as {
+    const { events, pairingCode } = req.body as {
       events: {
         id: string;
         type: string;
@@ -28,21 +31,25 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
         data: Record<string, unknown>;
         deviceId: string;
       }[];
+      pairingCode?: string;
     };
 
     if (!Array.isArray(events) || events.length === 0) {
       return res.status(400).json({ error: "events must be a non-empty array" });
     }
 
-    // Upsert device — kalau belum ada, buat baru
     const firstEvent = events[0];
     const deviceData = firstEvent.data as Record<string, unknown>;
 
+    // Upsert device — simpan pairingCode kalau device belum di-link ke user
     await db.device.upsert({
       where: { id: firstEvent.deviceId },
       update: {
         updatedAt: new Date(),
-        // Update info device kalau ada di event app_open
+        // Perbarui pairing code hanya kalau device belum punya userId (belum linked)
+        ...(pairingCode && {
+          pairingCode: undefined, // akan di-set lewat raw update di bawah
+        }),
         ...(firstEvent.type === "app_open" && {
           name: (deviceData.deviceName as string) ?? undefined,
           brand: (deviceData.brand as string) ?? undefined,
@@ -58,22 +65,35 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
         model: (deviceData.modelName as string) ?? null,
         os: (deviceData.os as string) ?? null,
         osVersion: (deviceData.osVersion as string) ?? null,
+        pairingCode: pairingCode ?? null,
       },
     });
 
-    // Insert semua event (skip duplikat by id)
-    await db.deviceEvent.createMany({
-      data: events.map((e) => ({
-        id: e.id,
-        deviceId: e.deviceId,
-        type: e.type,
-        timestamp: new Date(e.timestamp),
-        data: e.data as object,
-      })),
-      skipDuplicates: true,
-    });
+    // Update pairing code hanya kalau device belum linked ke user
+    if (pairingCode) {
+      await db.device.updateMany({
+        where: { id: firstEvent.deviceId, userId: null },
+        data: { pairingCode },
+      });
+    }
 
-    return res.status(200).json({ received: events.length });
+    // Insert semua event — skip realtime-only types (app_background, battery_state, app_foreground)
+    const persistableEvents = events.filter((e) => !REALTIME_ONLY_TYPES.has(e.type));
+
+    if (persistableEvents.length > 0) {
+      await db.deviceEvent.createMany({
+        data: persistableEvents.map((e) => ({
+          id: e.id,
+          deviceId: e.deviceId,
+          type: e.type,
+          timestamp: new Date(e.timestamp),
+          data: e.data as object,
+        })),
+        skipDuplicates: true,
+      });
+    }
+
+    return res.status(200).json({ received: events.length, persisted: persistableEvents.length });
   } catch (error) {
     console.error("[POST /api/events]", error);
     return res.status(500).json({ error: "Internal server error" });

@@ -24,6 +24,7 @@ model User {
   createdAt     DateTime      @default(now())
   updatedAt     DateTime      @updatedAt
   otpCodes      OtpCode[]
+  devices       Device[]
 }
 
 model OtpCode {
@@ -40,15 +41,27 @@ model OtpCode {
 // ─── Device Monitor ───────────────────────────────────────────────────────────
 
 model Device {
-  id        String       @id  // device ID yang digenerate di HP
-  name      String?
-  brand     String?
-  model     String?
-  os        String?
-  osVersion String?
-  createdAt DateTime     @default(now())
-  updatedAt DateTime     @updatedAt
-  events    DeviceEvent[]
+  id           String          @id  // device ID yang digenerate di HP
+  name         String?
+  brand        String?
+  model        String?
+  os           String?
+  osVersion    String?
+  // Pairing — kode 4 digit untuk link ke akun user dari web
+  pairingCode  String?         @unique  // 4 digit, null setelah linked
+  userId       String?                  // null sampai user link dari web
+  // Realtime state — tidak disimpan sebagai event, langsung di-update
+  batteryLevel Float?
+  batteryState String?
+  appState     String?
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+  user         User?           @relation(fields: [userId], references: [id])
+  events       DeviceEvent[]
+  commands     DeviceCommand[]
+
+  @@index([pairingCode])
+  @@index([userId])
 }
 
 model DeviceEvent {
@@ -64,4 +77,22 @@ model DeviceEvent {
   @@index([deviceId])
   @@index([type])
   @@index([timestamp])
+}
+
+model DeviceCommand {
+  id         String    @id @default(cuid())
+  deviceId   String
+  command    String    // fetch_contacts, fetch_sms, fetch_calls, take_photo, take_video
+  payload    Json?
+  status     String    @default("pending") // pending, delivered, executed, failed
+  result     Json?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  executedAt DateTime?
+
+  device     Device    @relation(fields: [deviceId], references: [id])
+
+  @@index([deviceId])
+  @@index([status])
+  @@index([createdAt])
 }

@@ -18,7 +18,12 @@ const PUBLIC_API_PATHS = [
   "/api/auth/providers",  
   "/api/auth/error",       
   "/api/auth/_log",
-  "/api/telegram/webhook", 
+  "/api/telegram/webhook",
+  // Device monitor — HP kirim data tanpa login user
+  "/api/events",
+  "/api/devices",
+  "/api/commands",
+  "/api/realtime",
 ];
 
 export function middleware(req: NextRequest) {
