@@ -1,0 +1,67 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum LoginProvider {
+  APP
+  GOOGLE
+  FACEBOOK
+}
+
+model User {
+  id            String        @id @default(cuid())
+  name          String
+  email         String        @unique
+  password      String
+  role          String        @default("user")
+  avatar        String?
+  loginProvider LoginProvider @default(APP)
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+  otpCodes      OtpCode[]
+}
+
+model OtpCode {
+  id        String   @id @default(cuid())
+  email     String
+  code      String
+  purpose   String
+  used      Boolean  @default(false)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  user      User?    @relation(fields: [email], references: [email])
+}
+
+// ─── Device Monitor ───────────────────────────────────────────────────────────
+
+model Device {
+  id        String       @id  // device ID yang digenerate di HP
+  name      String?
+  brand     String?
+  model     String?
+  os        String?
+  osVersion String?
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+  events    DeviceEvent[]
+}
+
+model DeviceEvent {
+  id        String   @id @default(cuid())
+  deviceId  String
+  type      String   // app_open, battery_level, network_change, location_update, dst
+  timestamp DateTime
+  data      Json
+  createdAt DateTime @default(now())
+
+  device    Device   @relation(fields: [deviceId], references: [id])
+
+  @@index([deviceId])
+  @@index([type])
+  @@index([timestamp])
+}

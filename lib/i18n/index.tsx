@@ -1,0 +1,58 @@
+import { createContext, useContext, useState, useEffect, ReactNode } from "react";
+import { common } from "./locales/common";
+import { profile } from "./locales/profile";
+import { sidebar } from "./locales/sidebar";
+import { auth } from "./locales/auth";
+
+export type Lang = "id" | "en";
+
+const STORAGE_KEY = "app-lang";
+
+export const locales = {
+  common,
+  profile,
+  sidebar,
+  auth,
+} as const;
+
+type LocalesMap = typeof locales;
+
+function buildT(lang: Lang) {
+  return Object.fromEntries(
+    Object.entries(locales).map(([k, v]) => [k, v[lang]])
+  ) as { [K in keyof LocalesMap]: LocalesMap[K][Lang] };
+}
+
+interface I18nContextValue {
+  lang: Lang;
+  setLang: (l: Lang) => void;
+  t: ReturnType<typeof buildT>;
+}
+
+const I18nContext = createContext<I18nContextValue | null>(null);
+
+export function I18nProvider({ children }: { children: ReactNode }) {
+  const [lang, setLangState] = useState<Lang>("id");
+
+  useEffect(() => {
+    const saved = localStorage.getItem(STORAGE_KEY) as Lang | null;
+    if (saved === "id" || saved === "en") setLangState(saved);
+  }, []);
+
+  const setLang = (l: Lang) => {
+    localStorage.setItem(STORAGE_KEY, l);
+    setLangState(l);
+  };
+
+  return (
+    <I18nContext.Provider value={{ lang, setLang, t: buildT(lang) }}>
+      {children}
+    </I18nContext.Provider>
+  );
+}
+
+export function useI18n() {
+  const ctx = useContext(I18nContext);
+  if (!ctx) throw new Error("useI18n must be used within I18nProvider");
+  return ctx;
+}
