@@ -159,3 +159,73 @@ OtpCode       — kode OTP untuk verifikasi email
 ```
 
 Field realtime di `Device` (`batteryLevel`, `batteryState`, `appState`) di-update langsung via `POST /api/realtime` tanpa disimpan sebagai event log.
+
+---
+
+## Update Prisma / Database
+
+Lakukan langkah-langkah berikut setiap kali ada perubahan pada `prisma/schema.prisma` (tambah model, ubah field, hapus relasi, dll).
+
+### Development (local)
+
+```bash
+# 1. Buat migration baru dari perubahan schema
+npx prisma migrate dev --name <nama_perubahan>
+# Contoh:
+npx prisma migrate dev --name add_user_role
+
+# 2. Regenerate Prisma Client agar tipe TypeScript ikut update
+npx prisma generate
+```
+
+> `migrate dev` otomatis menjalankan `prisma generate` di akhir, tapi menjalankan keduanya secara eksplisit lebih aman.
+
+### Production / Vercel
+
+```bash
+# Jalankan migration yang sudah ada ke database production
+npx prisma migrate deploy
+
+# Regenerate client (biasanya sudah dijalankan saat build)
+npx prisma generate
+```
+
+> Di Vercel, tambahkan `npx prisma generate` ke build command:
+> ```
+> npx prisma generate && next build
+> ```
+
+### Prototyping cepat (tanpa migration file)
+
+Kalau sedang eksperimen dan belum perlu migration history:
+
+```bash
+# Push schema langsung ke database (tidak membuat file migration)
+npx prisma db push
+
+# Regenerate Prisma Client
+npx prisma generate
+```
+
+> ⚠️ Jangan gunakan `db push` di production — tidak ada rollback dan tidak tercatat di migration history.
+
+### Urutan yang benar
+
+```
+Edit schema.prisma
+       ↓
+npx prisma migrate dev    ← dev (buat + apply migration)
+npx prisma migrate deploy ← production (apply migration yang ada)
+       ↓
+npx prisma generate       ← update Prisma Client
+       ↓
+Restart dev server (yarn dev)
+```
+
+### Prisma Studio — lihat & edit data langsung
+
+```bash
+npx prisma studio
+```
+
+Buka di [http://localhost:5555](http://localhost:5555)

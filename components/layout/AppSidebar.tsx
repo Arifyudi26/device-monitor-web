@@ -183,7 +183,7 @@ const AppSidebar: React.FC = () => {
         <Link href="/">
           {isExpanded || isHovered || isMobileOpen ? (
             <span className="text-lg font-bold text-gray-900 dark:text-white tracking-tight">
-              Device<span className="text-blue-500">Monitor</span>
+              Device <span className="text-blue-500">Monitor</span>
             </span>
           ) : (
             <span className="text-xl font-bold text-blue-500">D</span>
