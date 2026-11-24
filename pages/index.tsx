@@ -595,6 +595,13 @@ export default function MonitorPage() {
 
   useEffect(() => { setPage(1); }, [selectedDevice, selectedType]);
 
+  // Simpan device terpilih supaya halaman lain (misal Contacts) bisa memakainya
+  useEffect(() => {
+    if (selectedDevice !== "all") {
+      localStorage.setItem("lastSelectedDeviceId", selectedDevice);
+    }
+  }, [selectedDevice]);
+
   // ─── Send command ───────────────────────────────────────────────────────────
 
   const sendCommand = useCallback(async (command: string) => {
