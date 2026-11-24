@@ -39,7 +39,12 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
     }
 
     const firstEvent = events[0];
-    const deviceData = firstEvent.data as Record<string, unknown>;
+    // Cari event app_open di seluruh batch, bukan cuma events[0] — beberapa event bisa
+    // ter-batch bersamaan saat startup (baterai/network/lokasi kepicu paralel), jadi
+    // app_open tidak selalu di index 0. Tanpa ini, info device (nama/brand/model/os)
+    // bisa tersimpan null kalau app_open bukan event pertama dalam batch.
+    const appOpenEvent = events.find((e) => e.type === "app_open");
+    const deviceData = (appOpenEvent?.data ?? {}) as Record<string, unknown>;
 
     // Upsert device — simpan pairingCode kalau device belum di-link ke user
     await db.device.upsert({
@@ -50,7 +55,7 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
         ...(pairingCode && {
           pairingCode: undefined, // akan di-set lewat raw update di bawah
         }),
-        ...(firstEvent.type === "app_open" && {
+        ...(appOpenEvent && {
           name: (deviceData.deviceName as string) ?? undefined,
           brand: (deviceData.brand as string) ?? undefined,
           model: (deviceData.modelName as string) ?? undefined,

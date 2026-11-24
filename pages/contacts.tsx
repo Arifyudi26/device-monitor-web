@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/router";
 import AppLayout from "@components/layout/AppLayout";
 import PageMeta from "@components/common/PageMeta";
+import axiosGlobal from "@/services/AxiosGlobal";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -112,8 +113,7 @@ export default function ContactsPage() {
     setLoading(true)
     if (!deviceId) return;
     try {
-      const res = await fetch(`/api/contacts?deviceId=${deviceId}`);
-      const data = await res.json();
+      const { data } = await axiosGlobal.get("/contacts", { params: { deviceId } });
       setContacts(data.contacts ?? []);
       setTotal(data.total ?? 0);
       setNewCount(data.newCount ?? 0);
@@ -135,11 +135,7 @@ export default function ContactsPage() {
     if (!deviceId) return;
     setSyncing(true);
     try {
-      await fetch("/api/commands", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ deviceId, command: "fetch_contacts" }),
-      });
+      await axiosGlobal.post("/commands", { deviceId, command: "fetch_contacts" });
       // Poll sampai ada data baru (max 30 detik)
       let attempts = 0;
       const poll = setInterval(async () => {

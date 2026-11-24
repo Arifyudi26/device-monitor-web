@@ -4,6 +4,8 @@ import PageMeta from "@components/common/PageMeta";
 import Badge from "@components/ui/badge/Badge";
 import PageBreadCrumb from "@components/common/PageBreadCrumb";
 import type { RealtimeDeviceState } from "@/pages/api/realtime";
+import axios from "axios";
+import axiosGlobal from "@/services/AxiosGlobal";
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 interface Device {
@@ -117,11 +119,13 @@ function DeviceCard({
   realtimeState,
   selected,
   onClick,
+  onDeleteClick,
 }: {
   device: Device;
   realtimeState: RealtimeDeviceState | undefined;
   selected: boolean;
   onClick: () => void;
+  onDeleteClick: () => void;
 }) {
   const lastEvent = device.events[0];
   const level = realtimeState?.batteryLevel ?? device.batteryLevel;
@@ -129,31 +133,48 @@ function DeviceCard({
   const appState = realtimeState?.appState ?? device.appState;
 
   return (
-    <button
-      onClick={onClick}
-      className={`w-full text-left rounded-xl border p-3 transition-all ${
+    <div
+      className={`relative w-full rounded-xl border p-3 transition-all ${
         selected
           ? "border-brand-500 bg-brand-50 dark:bg-brand-500/10"
           : "border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 hover:border-brand-300"
       }`}
     >
-      <div className="flex items-center justify-between gap-2">
-        <span className="font-medium text-sm text-gray-900 dark:text-white truncate">
-          {device.brand ?? ""} {device.model ?? device.id.slice(0, 12)}
-        </span>
-        <Badge color={appState === "active" ? "success" : "warning"} size="sm">
-          {appState ?? "unknown"}
-        </Badge>
-      </div>
-      <p className="mt-0.5 text-xs text-gray-400 truncate">{device.id}</p>
-      <RealtimeBatteryBar level={level} state={state} />
-      {lastEvent && (
-        <p className="mt-1 text-xs text-gray-500">
-          Last: <span className="text-gray-700 dark:text-gray-300">{lastEvent.type}</span>
-          {" "}· {timeAgo(lastEvent.timestamp)}
-        </p>
-      )}
-    </button>
+      <button
+        onClick={(e) => {
+          e.stopPropagation();
+          onDeleteClick();
+        }}
+        title="Hapus device"
+        className="absolute top-2 right-2 p-1 rounded-md text-gray-300 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+      >
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <polyline points="3 6 5 6 21 6" />
+          <path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6m5 0V4a2 2 0 012-2h0a2 2 0 012 2v2" />
+          <line x1="10" y1="11" x2="10" y2="17" />
+          <line x1="14" y1="11" x2="14" y2="17" />
+        </svg>
+      </button>
+
+      <button onClick={onClick} className="w-full text-left pr-5">
+        <div className="flex items-center justify-between gap-2">
+          <span className="font-medium text-sm text-gray-900 dark:text-white truncate">
+            {device.brand ?? ""} {device.model ?? device.id.slice(0, 12)}
+          </span>
+          <Badge color={appState === "active" ? "success" : "warning"} size="sm">
+            {appState ?? "unknown"}
+          </Badge>
+        </div>
+        <p className="mt-0.5 text-xs text-gray-400 truncate">{device.id}</p>
+        <RealtimeBatteryBar level={level} state={state} />
+        {lastEvent && (
+          <p className="mt-1 text-xs text-gray-500">
+            Last: <span className="text-gray-700 dark:text-gray-300">{lastEvent.type}</span>
+            {" "}· {timeAgo(lastEvent.timestamp)}
+          </p>
+        )}
+      </button>
+    </div>
   );
 }
 
@@ -302,9 +323,9 @@ function CommandResult({ command, result, deviceId }: {
   useEffect(() => {
     if (command !== "fetch_contacts") return;
     setLoadingContacts(true);
-    fetch(`/api/contacts?deviceId=${deviceId}&onlyNew=true`)
-      .then((r) => r.json())
-      .then((data) => {
+    axiosGlobal
+      .get("/contacts", { params: { deviceId, onlyNew: true } })
+      .then(({ data }) => {
         setNewContacts(data.contacts ?? []);
         setNewCount(data.newCount ?? 0);
         setTotal(data.total ?? 0);
@@ -426,26 +447,22 @@ function AddDeviceModal({ onClose, onLinked }: { onClose: () => void; onLinked: 
         .find((r) => r.startsWith("token="))
         ?.split("=")[1];
 
-      const res = await fetch("/api/devices/link", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-        body: JSON.stringify({ code }),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        setError(data.error ?? "Gagal menghubungkan device");
+      const { data } = await axiosGlobal.post(
+        "/devices/link",
+        { code },
+        { headers: token ? { Authorization: `Bearer ${token}` } : {} }
+      );
+      setSuccess(`Device "${data.device.brand ?? ""} ${data.device.model ?? data.device.id}" berhasil terhubung!`);
+      setTimeout(() => {
+        onLinked();
+        onClose();
+      }, 1500);
+    } catch (err) {
+      if (axios.isAxiosError(err) && err.response) {
+        setError(err.response.data?.error ?? "Gagal menghubungkan device");
       } else {
-        setSuccess(`Device "${data.device.brand ?? ""} ${data.device.model ?? data.device.id}" berhasil terhubung!`);
-        setTimeout(() => {
-          onLinked();
-          onClose();
-        }, 1500);
+        setError("Gagal terhubung ke server");
       }
-    } catch {
-      setError("Gagal terhubung ke server");
     } finally {
       setLoading(false);
     }
@@ -505,7 +522,92 @@ function AddDeviceModal({ onClose, onLinked }: { onClose: () => void; onLinked: 
   );
 }
 
+// ─── Delete Device Modal ───────────────────────────────────────────────────────
 
+function DeleteDeviceModal({
+  device,
+  onClose,
+  onDeleted,
+}: {
+  device: Device;
+  onClose: () => void;
+  onDeleted: () => void;
+}) {
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleDelete = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const token = document.cookie
+        .split("; ")
+        .find((r) => r.startsWith("token="))
+        ?.split("=")[1];
+
+      await axiosGlobal.delete(`/devices/${device.id}`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      onDeleted();
+      onClose();
+    } catch (err) {
+      if (axios.isAxiosError(err) && err.response) {
+        setError(err.response.data?.error ?? "Gagal menghapus device");
+      } else {
+        setError("Gagal terhubung ke server");
+      }
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+      <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-xl p-6 w-full max-w-sm mx-4">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg font-bold text-gray-900 dark:text-white">Hapus Device</h2>
+          <button
+            onClick={onClose}
+            className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 text-xl leading-none"
+          >
+            ✕
+          </button>
+        </div>
+
+        <p className="text-sm text-gray-500 dark:text-gray-400 mb-2">
+          Yakin mau hapus{" "}
+          <span className="font-semibold text-gray-700 dark:text-gray-300">
+            {device.brand ?? ""} {device.model ?? device.id}
+          </span>
+          ?
+        </p>
+        <p className="text-sm text-red-500 mb-6">
+          Semua event, lokasi/maps, command, dan kontak milik device ini akan ikut terhapus permanen. Tindakan ini tidak bisa dibatalkan.
+        </p>
+
+        {error && (
+          <p className="text-sm text-red-500 text-center mb-3">{error}</p>
+        )}
+
+        <div className="flex gap-3">
+          <button
+            onClick={onClose}
+            disabled={loading}
+            className="flex-1 py-2.5 border border-gray-300 dark:border-gray-700 text-gray-700 dark:text-gray-300 font-semibold rounded-xl transition-colors disabled:opacity-50"
+          >
+            Batal
+          </button>
+          <button
+            onClick={handleDelete}
+            disabled={loading}
+            className="flex-1 py-2.5 bg-red-500 hover:bg-red-600 disabled:opacity-50 text-white font-semibold rounded-xl transition-colors"
+          >
+            {loading ? "Menghapus…" : "Hapus"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export default function MonitorPage() {
   const [devices, setDevices] = useState<Device[]>([]);
@@ -521,6 +623,7 @@ export default function MonitorPage() {
   const [sending, setSending] = useState<string | null>(null);
   const [showAddDevice, setShowAddDevice] = useState(false);
   const [newContactCount, setNewContactCount] = useState(0);
+  const [deviceToDelete, setDeviceToDelete] = useState<Device | null>(null);
 
   // Realtime states from SSE — deviceId → state
   const [realtimeStates, setRealtimeStates] = useState<Record<string, RealtimeDeviceState>>({});
@@ -550,8 +653,7 @@ export default function MonitorPage() {
   // ─── Data fetching ──────────────────────────────────────────────────────────
 
   const fetchDevices = useCallback(async () => {
-    const res = await fetch("/api/devices");
-    const data = await res.json();
+    const { data } = await axiosGlobal.get("/devices");
     setDevices(data.devices ?? []);
   }, []);
 
@@ -560,8 +662,7 @@ export default function MonitorPage() {
     if (selectedDevice !== "all") params.set("deviceId", selectedDevice);
     if (selectedType !== "all") params.set("type", selectedType);
 
-    const res = await fetch(`/api/events?${params}`);
-    const data = await res.json();
+    const { data } = await axiosGlobal.get("/events", { params });
     setEvents(data.events ?? []);
     setTotal(data.total ?? 0);
     setTotalPages(data.totalPages ?? 1);
@@ -569,13 +670,15 @@ export default function MonitorPage() {
 
   const fetchCommands = useCallback(async () => {
     if (selectedDevice === "all") return;
-    const res = await fetch(`/api/commands?deviceId=${selectedDevice}&limit=30`);
-    const data = await res.json();
+    const { data } = await axiosGlobal.get("/commands", {
+      params: { deviceId: selectedDevice, limit: 30 },
+    });
     setCommands(data.commands ?? []);
 
     // Cek apakah ada kontak baru dari sync terakhir
-    const contactRes = await fetch(`/api/contacts?deviceId=${selectedDevice}`);
-    const contactData = await contactRes.json();
+    const { data: contactData } = await axiosGlobal.get("/contacts", {
+      params: { deviceId: selectedDevice },
+    });
     setNewContactCount(contactData.newCount ?? 0);
   }, [selectedDevice]);
 
@@ -602,17 +705,21 @@ export default function MonitorPage() {
     }
   }, [selectedDevice]);
 
+  const handleDeviceDeleted = useCallback((deletedId: string) => {
+    if (selectedDevice === deletedId) {
+      setSelectedDevice("all");
+    }
+    fetchDevices();
+    fetchEvents();
+  }, [selectedDevice, fetchDevices, fetchEvents]);
+
   // ─── Send command ───────────────────────────────────────────────────────────
 
   const sendCommand = useCallback(async (command: string) => {
     if (selectedDevice === "all") return;
     setSending(command);
     try {
-      await fetch("/api/commands", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ deviceId: selectedDevice, command }),
-      });
+      await axiosGlobal.post("/commands", { deviceId: selectedDevice, command });
       setTimeout(() => fetchCommands(), 500);
     } finally {
       setSending(null);
@@ -643,6 +750,15 @@ export default function MonitorPage() {
         <AddDeviceModal
           onClose={() => setShowAddDevice(false)}
           onLinked={() => { fetchDevices(); fetchEvents(); }}
+        />
+      )}
+
+      {/* ── Delete Device Modal ──────────────────────────────────────── */}
+      {deviceToDelete && (
+        <DeleteDeviceModal
+          device={deviceToDelete}
+          onClose={() => setDeviceToDelete(null)}
+          onDeleted={() => handleDeviceDeleted(deviceToDelete.id)}
         />
       )}
 
@@ -707,13 +823,14 @@ export default function MonitorPage() {
             All Devices ({devices.length})
           </button>
 
-          {devices.map((d) => (
+          {devices && devices.map((d) => (
             <DeviceCard
               key={d.id}
               device={d}
               realtimeState={realtimeStates[d.id]}
               selected={selectedDevice === d.id}
               onClick={() => setSelectedDevice(d.id)}
+              onDeleteClick={() => setDeviceToDelete(d)}
             />
           ))}
         </div>
