@@ -11,6 +11,7 @@ interface ContactItem {
   name: string | null;
   phones: string[];
   emails: string[];
+  sources: string[];
   isNew: boolean;
   firstSeenAt: string;
   lastSeenAt: string;
@@ -65,6 +66,11 @@ function ContactRow({ contact }: { contact: ContactItem }) {
             ✉ {contact.emails.join("  ·  ")}
           </p>
         )}
+        {contact.sources.length > 0 && (
+          <p className="text-[10px] text-gray-400 truncate mt-0.5">
+            {contact.sources.map((s) => `🏷 ${s}`).join("  ·  ")}
+          </p>
+        )}
       </div>
 
       {contact.phones.length > 1 && (
@@ -80,7 +86,18 @@ function ContactRow({ contact }: { contact: ContactItem }) {
 
 export default function ContactsPage() {
   const router = useRouter();
-  const deviceId = router.query.deviceId as string | undefined;
+  const queryDeviceId = router.query.deviceId as string | undefined;
+
+  // Kalau tidak ada deviceId di URL (misal masuk dari menu sidebar), pakai
+  // device terakhir yang dipilih di halaman Monitor (disimpan di localStorage).
+  const [fallbackDeviceId, setFallbackDeviceId] = useState<string | undefined>(undefined);
+  useEffect(() => {
+    if (!queryDeviceId) {
+      setFallbackDeviceId(localStorage.getItem("lastSelectedDeviceId") ?? undefined);
+    }
+  }, [queryDeviceId]);
+
+  const deviceId = queryDeviceId ?? fallbackDeviceId;
 
   const [contacts, setContacts] = useState<ContactItem[]>([]);
   const [total, setTotal] = useState(0);
@@ -92,6 +109,7 @@ export default function ContactsPage() {
   const searchRef = useRef<HTMLInputElement>(null);
 
   const fetchContacts = useCallback(async () => {
+    setLoading(true)
     if (!deviceId) return;
     try {
       const res = await fetch(`/api/contacts?deviceId=${deviceId}`);
@@ -105,8 +123,13 @@ export default function ContactsPage() {
   }, [deviceId]);
 
   useEffect(() => {
-    if (deviceId) fetchContacts();
-  }, [deviceId, fetchContacts]);
+    if (!router.isReady) return;
+    if (deviceId) {
+      fetchContacts();
+    } else {
+      setLoading(false);
+    }
+  }, [router.isReady, deviceId, fetchContacts]);
 
   const handleSync = async () => {
     if (!deviceId) return;

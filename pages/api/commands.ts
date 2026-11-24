@@ -115,6 +115,7 @@ interface ContactFromDevice {
   name: string | null;
   phones: string[];
   emails: string[];
+  sources?: string[];
 }
 
 async function handlePatch(req: NextApiRequest, res: NextApiResponse) {
@@ -150,6 +151,7 @@ async function handlePatch(req: NextApiRequest, res: NextApiResponse) {
         select: { id: true },
       });
       const existingIds = new Set(existing.map((c) => c.id));
+      const incomingIds = new Set(contacts.map((c) => c.id));
 
       // Reset isNew semua kontak lama
       await db.contact.updateMany({
@@ -160,25 +162,40 @@ async function handlePatch(req: NextApiRequest, res: NextApiResponse) {
       // Upsert semua kontak — tandai isNew kalau belum pernah ada
       for (const c of contacts) {
         const isNew = !existingIds.has(c.id);
+        // dedup nomor/email lagi di server sebagai safety net kalau data dari HP masih mengandung duplikat
+        const phones = Array.from(new Set((c.phones ?? []).filter(Boolean)));
+        const emails = Array.from(new Set((c.emails ?? []).filter(Boolean)));
+        const sources = Array.from(new Set((c.sources ?? []).filter(Boolean)));
         await db.contact.upsert({
           where: { id_deviceId: { id: c.id, deviceId } },
           create: {
             id: c.id,
             deviceId,
             name: c.name ?? null,
-            phones: c.phones ?? [],
-            emails: c.emails ?? [],
+            phones,
+            emails,
+            sources,
             isNew,
             firstSeenAt: now,
             lastSeenAt: now,
           },
           update: {
             name: c.name ?? null,
-            phones: c.phones ?? [],
-            emails: c.emails ?? [],
+            phones,
+            emails,
+            sources,
             isNew,
             lastSeenAt: now,
           },
+        });
+      }
+
+      // Hapus kontak yang sudah tidak ada lagi di HP (dihapus oleh user) —
+      // supaya web tetap singkron, bukan cuma menambah/update.
+      const removedIds = [...existingIds].filter((id) => !incomingIds.has(id));
+      if (removedIds.length > 0) {
+        await db.contact.deleteMany({
+          where: { deviceId, id: { in: removedIds } },
         });
       }
     }

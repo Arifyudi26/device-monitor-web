@@ -102,6 +102,7 @@ model Contact {
   name        String?
   phones      String[] // array nomor
   emails      String[] // array email
+  sources     String[] @default([]) // sumber akun kontak: Google, SIM Card, WhatsApp, dll (Android-only, best-effort)
   isNew       Boolean  @default(false) // true kalau baru muncul di sync terakhir
   firstSeenAt DateTime @default(now())
   lastSeenAt  DateTime @default(now())
