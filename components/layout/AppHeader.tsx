@@ -1,5 +1,3 @@
-/* eslint-disable @next/next/no-img-element */
-import Link from "next/link";
 import NotificationDropdown from "@components/header/NotificationDropdown";
 import UserDropdown from "@components/header/UserDropdown";
 import { useSidebar } from "@lib/context/SidebarContext";
