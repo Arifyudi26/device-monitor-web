@@ -38,6 +38,14 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
       return res.status(400).json({ error: "events must be a non-empty array" });
     }
 
+    // Debug: cek apakah semua event dalam satu batch benar-benar punya deviceId yang sama.
+    // Kalau tidak, upsert (yang pakai firstEvent.deviceId) tidak akan meng-create device
+    // untuk deviceId lain yang ikut terbawa di batch, menyebabkan FK violation di createMany.
+    const uniqueDeviceIds = Array.from(new Set(events.map((e) => e.deviceId)));
+    if (uniqueDeviceIds.length > 1) {
+      console.error("[POST /api/events] Batch contains multiple deviceIds:", uniqueDeviceIds);
+    }
+
     const firstEvent = events[0];
     // Cari event app_open di seluruh batch, bukan cuma events[0] — beberapa event bisa
     // ter-batch bersamaan saat startup (baterai/network/lokasi kepicu paralel), jadi
