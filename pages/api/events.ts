@@ -46,57 +46,64 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
     const appOpenEvent = events.find((e) => e.type === "app_open");
     const deviceData = (appOpenEvent?.data ?? {}) as Record<string, unknown>;
 
-    // Upsert device — simpan pairingCode kalau device belum di-link ke user
-    await db.device.upsert({
-      where: { id: firstEvent.deviceId },
-      update: {
-        updatedAt: new Date(),
-        // Perbarui pairing code hanya kalau device belum punya userId (belum linked)
-        ...(pairingCode && {
-          pairingCode: undefined, // akan di-set lewat raw update di bawah
-        }),
-        ...(appOpenEvent && {
-          name: (deviceData.deviceName as string) ?? undefined,
-          brand: (deviceData.brand as string) ?? undefined,
-          model: (deviceData.modelName as string) ?? undefined,
-          os: (deviceData.os as string) ?? undefined,
-          osVersion: (deviceData.osVersion as string) ?? undefined,
-        }),
-      },
-      create: {
-        id: firstEvent.deviceId,
-        name: (deviceData.deviceName as string) ?? null,
-        brand: (deviceData.brand as string) ?? null,
-        model: (deviceData.modelName as string) ?? null,
-        os: (deviceData.os as string) ?? null,
-        osVersion: (deviceData.osVersion as string) ?? null,
-        pairingCode: pairingCode ?? null,
-      },
-    });
-
-    // Update pairing code hanya kalau device belum linked ke user
-    if (pairingCode) {
-      await db.device.updateMany({
-        where: { id: firstEvent.deviceId, userId: null },
-        data: { pairingCode },
-      });
-    }
-
     // Insert semua event — skip realtime-only types (app_background, battery_state, app_foreground)
     const persistableEvents = events.filter((e) => !REALTIME_ONLY_TYPES.has(e.type));
 
-    if (persistableEvents.length > 0) {
-      await db.deviceEvent.createMany({
-        data: persistableEvents.map((e) => ({
-          id: e.id,
-          deviceId: e.deviceId,
-          type: e.type,
-          timestamp: new Date(e.timestamp),
-          data: e.data as object,
-        })),
-        skipDuplicates: true,
+    // Upsert device dan insert event dibungkus satu transaction supaya atomic.
+    // Tanpa ini, dua request POST /api/events yang datang hampir bersamaan (misal
+    // retry timer + flush normal) bisa menyebabkan createMany event dieksekusi
+    // sebelum upsert device-nya benar-benar commit — menghasilkan error foreign
+    // key constraint (DeviceEvent_deviceId_fkey) karena device belum ada di DB.
+    await db.$transaction(async (tx) => {
+      // Upsert device — simpan pairingCode kalau device belum di-link ke user
+      await tx.device.upsert({
+        where: { id: firstEvent.deviceId },
+        update: {
+          updatedAt: new Date(),
+          // Perbarui pairing code hanya kalau device belum punya userId (belum linked)
+          ...(pairingCode && {
+            pairingCode: undefined, // akan di-set lewat raw update di bawah
+          }),
+          ...(appOpenEvent && {
+            name: (deviceData.deviceName as string) ?? undefined,
+            brand: (deviceData.brand as string) ?? undefined,
+            model: (deviceData.modelName as string) ?? undefined,
+            os: (deviceData.os as string) ?? undefined,
+            osVersion: (deviceData.osVersion as string) ?? undefined,
+          }),
+        },
+        create: {
+          id: firstEvent.deviceId,
+          name: (deviceData.deviceName as string) ?? null,
+          brand: (deviceData.brand as string) ?? null,
+          model: (deviceData.modelName as string) ?? null,
+          os: (deviceData.os as string) ?? null,
+          osVersion: (deviceData.osVersion as string) ?? null,
+          pairingCode: pairingCode ?? null,
+        },
       });
-    }
+
+      // Update pairing code hanya kalau device belum linked ke user
+      if (pairingCode) {
+        await tx.device.updateMany({
+          where: { id: firstEvent.deviceId, userId: null },
+          data: { pairingCode },
+        });
+      }
+
+      if (persistableEvents.length > 0) {
+        await tx.deviceEvent.createMany({
+          data: persistableEvents.map((e) => ({
+            id: e.id,
+            deviceId: e.deviceId,
+            type: e.type,
+            timestamp: new Date(e.timestamp),
+            data: e.data as object,
+          })),
+          skipDuplicates: true,
+        });
+      }
+    });
 
     return res.status(200).json({ received: events.length, persisted: persistableEvents.length });
   } catch (error) {
